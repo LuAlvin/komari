@@ -227,6 +227,11 @@ func RunServer() {
 			updateGroup.POST("/user", update.UpdateUser)
 			updateGroup.PUT("/favicon", update.UploadFavicon)
 			updateGroup.POST("/favicon", update.DeleteFavicon)
+			// 在线升级
+			updateGroup.GET("/version/check", update.GetLatestVersion)
+			updateGroup.GET("/version/current", update.GetCurrentVersion)
+			updateGroup.POST("/version/upgrade", update.DoUpgrade)
+			updateGroup.POST("/version/restart", update.RestartService)
 		}
 		// tasks
 		taskGroup := adminAuthrized.Group("/task")
