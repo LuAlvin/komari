@@ -131,9 +131,9 @@ func checkLatestVersion() (*VersionInfo, error) {
 	if runtime.GOOS == "windows" {
 		fileName += ".exe"
 	}
-	info.DownloadURL = fmt.Sprintf("https://github.com/komari-monitor/komari/releases/latest/download/%s", fileName)
 
 	// 查找对应架构的下载链接
+	found := false
 	for _, asset := range release.Assets {
 		expectedName := fileName
 		if runtime.GOOS == "windows" && !strings.HasSuffix(asset.Name, ".exe") {
@@ -141,8 +141,13 @@ func checkLatestVersion() (*VersionInfo, error) {
 		}
 		if asset.Name == expectedName || strings.Contains(asset.Name, fmt.Sprintf("-%s-", arch)) || strings.Contains(asset.Name, fmt.Sprintf("-%s.", arch)) {
 			info.DownloadURL = asset.BrowserDownloadURL
+			found = true
 			break
 		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("未找到 %s-%s 架构的下载链接", osName, arch)
 	}
 
 	// 比较版本
@@ -174,6 +179,30 @@ func DoUpgrade(c *gin.Context) {
 	if err != nil {
 		// 尝试使用默认路径
 		currentPath = "/opt/komari/komari"
+	}
+
+	// 如果当前可执行文件不存在，尝试其他路径
+	if _, err := os.Stat(currentPath); os.IsNotExist(err) {
+		// 尝试常见的安装路径
+		paths := []string{
+			"/opt/komari/komari",
+			"/usr/local/bin/komari",
+			"./komari",
+			"komari",
+		}
+		found := false
+		for _, p := range paths {
+			if _, err := os.Stat(p); err == nil {
+				currentPath = p
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.Message = "找不到 komari 可执行文件"
+			c.JSON(http.StatusInternalServerError, result)
+			return
+		}
 	}
 
 	// 创建备份
@@ -223,8 +252,36 @@ func RestartService(c *gin.Context) {
 	// 检查 systemd 是否可用
 	cmd := exec.Command("systemctl", "is-active", "komari")
 	if err := cmd.Run(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "systemd 服务不可用，请手动重启",
+		// 尝试使用 supervisorctl
+		supervisorCmd := exec.Command("supervisorctl", "status", "komari")
+		if err := supervisorCmd.Run(); err == nil {
+			// 使用 supervisor 重启
+			restartCmd := exec.Command("supervisorctl", "restart", "komari")
+			if err := restartCmd.Run(); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "supervisor 重启失败，请手动重启",
+				})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "服务正在重启 (supervisor)",
+			})
+			return
+		}
+		
+		// 检查是否是 Docker 环境
+		dockerCmd := exec.Command("sh", "-c", "cat /proc/1/cgroup | grep -q docker || echo no")
+		if output, _ := dockerCmd.CombinedOutput(); string(output) == "no" {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "无法自动重启服务，请手动重启",
+			})
+			return
+		}
+		
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Docker 环境，请手动重启容器",
 		})
 		return
 	}
