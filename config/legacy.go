@@ -76,6 +76,9 @@ const (
 	RecordEnabledKey              = "record_enabled"
 	RecordPreserveTimeKey         = "record_preserve_time"
 	PingRecordPreserveTimeKey     = "ping_record_preserve_time"
+
+	// Upgrade settings
+	UpgradeRepoKey               = "upgrade_repo"
 	UpdatedAtKey                  = "updated_at"
 )
 

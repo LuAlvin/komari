@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/komari-monitor/komari/config"
 	"github.com/komari-monitor/komari/utils"
 )
 
-const GitHubAPIURL = "https://api.github.com/repos/komari-monitor/komari/releases/latest"
+const (
+	// DefaultGitHubRepo 默认检查的 GitHub 仓库
+	DefaultGitHubRepo = "komari-monitor/komari"
+)
 
 type VersionInfo struct {
 	CurrentVersion string `json:"current_version"`
@@ -31,6 +35,15 @@ type UpgradeResult struct {
 	Message      string `json:"message"`
 	NewVersion   string `json:"new_version,omitempty"`
 	BackupPath   string `json:"backup_path,omitempty"`
+}
+
+// getGitHubRepo 获取配置的 GitHub 仓库地址
+func getGitHubRepo() string {
+	repo, err := config.GetAs[string](config.UpgradeRepoKey, DefaultGitHubRepo)
+	if err != nil || repo == "" {
+		return DefaultGitHubRepo
+	}
+	return repo
 }
 
 // GetCurrentVersion 返回当前版本信息
@@ -60,6 +73,10 @@ func checkLatestVersion() (*VersionInfo, error) {
 		CheckedAt:      time.Now().Format(time.RFC3339),
 	}
 
+	// 获取配置的仓库地址
+	repo := getGitHubRepo()
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+
 	// 检测架构
 	arch := runtime.GOARCH
 	switch arch {
@@ -84,7 +101,7 @@ func checkLatestVersion() (*VersionInfo, error) {
 	}
 
 	// 调用 GitHub API
-	req, err := http.NewRequest("GET", GitHubAPIURL, nil)
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %v", err)
 	}
@@ -269,7 +286,7 @@ func RestartService(c *gin.Context) {
 			})
 			return
 		}
-		
+
 		// 检查是否是 Docker 环境
 		dockerCmd := exec.Command("sh", "-c", "cat /proc/1/cgroup | grep -q docker || echo no")
 		if output, _ := dockerCmd.CombinedOutput(); string(output) == "no" {
@@ -278,7 +295,7 @@ func RestartService(c *gin.Context) {
 			})
 			return
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "Docker 环境，请手动重启容器",
